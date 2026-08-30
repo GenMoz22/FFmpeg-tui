@@ -97,7 +97,7 @@ func (m Model) View() string {
 		consoleStyle = BoxFocusStyle
 	}
 	helpText := lipgloss.NewStyle().Foreground(ColorInactive).Render(
-		"[Tab] Switch Windows  |  [Enter] Select Field or Execute Pipeline  |  [q] Abort Task",
+		"[Tab] Switch Windows  |  [Enter] Select Field or Execute Pipeline  |  [Esc] Abort Task",
 	)
 	consoleView := consoleStyle.Width(totalWidth).Height(7).Render(
 		TitleStyle.Render("LIVE COMMAND") + "\n\n" +
