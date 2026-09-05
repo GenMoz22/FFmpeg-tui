@@ -69,8 +69,7 @@ func (m Model) View() string {
 	}
 
 	if m.ValidationError != "" {
-		errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555")).Bold(true)
-		subContent += "\n\n" + errStyle.Render("[!] "+m.ValidationError)
+		subContent += "\n\n" + ErrorBannerStyle.Render("[!] "+m.ValidationError)
 	}
 
 	subView := subStyle.Width(widthColMid).Height(16).Render(
@@ -132,8 +131,13 @@ func (m Model) View() string {
 		historyLines = append(historyLines, lipgloss.NewStyle().Foreground(ColorInactive).Render("No operations completed in this session."))
 	} else {
 		for _, h := range m.History {
-			historyLines = append(historyLines, fmt.Sprintf("[+] [%s] Executed successfully ➔ Generated file: %s",
-									lipgloss.NewStyle().Foreground(ColorSuccess).Render(h.Action), h.Target))
+			if h.Success {
+				historyLines = append(historyLines, fmt.Sprintf("[+] [%s] Executed successfully ➔ Generated file: %s",
+										lipgloss.NewStyle().Foreground(ColorSuccess).Render(h.Action), h.Target))
+			} else {
+				historyLines = append(historyLines, fmt.Sprintf("[-] [%s] Operation failed ➔ %s",
+										lipgloss.NewStyle().Foreground(ColorError).Render(h.Action), h.Target))
+			}
 		}
 	}
 	historyView := BoxStyle.Width(totalWidth).Height(5).Render(

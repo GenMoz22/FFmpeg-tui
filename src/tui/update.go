@@ -13,8 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// listenToProgress listens for execution progress updates from the background FFmpeg process
-// and streams them back as Bubble Tea messages to trigger UI re-renders.
+// listenToProgress listens for execution progress updates from the background FFmpeg process.
 func listenToProgress(ch <-chan ffmpeg.ProgressMessage) tea.Cmd {
 	return func() tea.Msg {
 		msg, ok := <-ch
@@ -32,8 +31,20 @@ func delayedReset() tea.Cmd {
 	})
 }
 
+// clearErrorAfterTimeout retains error banners visible for 6 seconds to ensure usability.
+func clearErrorAfterTimeout() tea.Cmd {
+	return tea.Tick(time.Second*6, func(t time.Time) tea.Msg {
+		return MsgClearValidationError{}
+	})
+}
+
 // syncInputsToEditOpts binds current active input text fields into the underlying EditOptions model.
 func (m *Model) syncInputsToEditOpts() {
+	mainVid := ""
+	if len(m.EditOpts.InputFiles) > 0 {
+		mainVid = m.EditOpts.InputFiles[0]
+	}
+
 	switch m.EditOpts.ActiveTool {
 		case "trim":
 			m.EditOpts.TrimStart = strings.TrimSpace(m.ParamInput1.Value())
@@ -43,7 +54,12 @@ func (m *Model) syncInputsToEditOpts() {
 		case "frame":
 			m.EditOpts.ExtractFrame = strings.TrimSpace(m.ParamInput1.Value())
 		case "subtitles":
-			m.EditOpts.SubPath = strings.TrimSpace(m.ParamInput1.Value())
+			rawPath := strings.TrimSpace(m.ParamInput1.Value())
+			if resolved, err := ffmpeg.ResolveFilePath(rawPath, mainVid); err == nil {
+				m.EditOpts.SubPath = resolved
+			} else {
+				m.EditOpts.SubPath = rawPath
+			}
 			m.EditOpts.SubPos = strings.TrimSpace(m.ParamInput2.Value())
 			m.EditOpts.SubOffset = strings.TrimSpace(m.ParamInput3.Value())
 			m.EditOpts.SubBgColor = strings.TrimSpace(m.ParamInput4.Value())
@@ -52,16 +68,24 @@ func (m *Model) syncInputsToEditOpts() {
 			m.EditOpts.TrimStart = strings.TrimSpace(m.ParamInput1.Value())
 			m.EditOpts.TrimEnd = strings.TrimSpace(m.ParamInput2.Value())
 		case "replaceaudio":
-			m.EditOpts.AudioFilePath = strings.TrimSpace(m.ParamInput1.Value())
+			rawPath := strings.TrimSpace(m.ParamInput1.Value())
+			if resolved, err := ffmpeg.ResolveFilePath(rawPath, mainVid); err == nil {
+				m.EditOpts.AudioFilePath = resolved
+			} else {
+				m.EditOpts.AudioFilePath = rawPath
+			}
 	}
 }
 
 // Update handles application state mutations, keyboard navigation, and asynchronous commands.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
-	m.ValidationError = ""
 
 	switch msg := msg.(type) {
+		case MsgClearValidationError:
+			m.ValidationError = ""
+			return m, nil
+
 		case tea.KeyMsg:
 			switch msg.String() {
 				case "ctrl+c", "esc":
@@ -71,7 +95,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.Quit
 
 				case "tab":
-					// Tab key handles panel focus rotation across Sidebar, SubOptions, and Console
+					m.ValidationError = ""
 					if m.ActivePanel == PanelSidebar {
 						m.ActivePanel = PanelSubOptions
 						m.SubMenuFocusIdx = 0
@@ -128,6 +152,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 
 									case "up", "k":
+										m.ValidationError = ""
 										if m.ActivePanel == PanelSidebar && m.SidebarIdx > 0 {
 											m.SidebarIdx--
 										} else if m.ActivePanel == PanelSubOptions && (m.SidebarIdx == 0 || m.SidebarIdx == 6 || m.SidebarIdx == 7) && m.SubOptionsIdx > 0 {
@@ -135,6 +160,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 										}
 
 									case "down", "j":
+										m.ValidationError = ""
 										if m.ActivePanel == PanelSidebar && m.SidebarIdx < len(m.SidebarItems)-1 {
 											m.SidebarIdx++
 										} else if m.ActivePanel == PanelSubOptions && (m.SidebarIdx == 0 || m.SidebarIdx == 6 || m.SidebarIdx == 7) && m.SubOptionsIdx < len(m.SubOptionsItems)-1 {
@@ -142,8 +168,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 										}
 
 									case "enter":
+										m.ValidationError = ""
 										if m.ActivePanel == PanelSidebar {
-											// Reset inputs and focus state when switching sidebar options
 											m.SubOptionsIdx = 0
 											m.SubMenuFocusIdx = 0
 											m.ParamInput1.SetValue("")
@@ -160,8 +186,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 												case 1: // Trim Segment
 													m.EditOpts.ActiveTool = "trim"
 													m.SubOptionsItems = []string{"Parameters Setup"}
-													m.ParamInput1.Placeholder = "Start (e.g., 0)"
-													m.ParamInput2.Placeholder = "End (e.g., 30)"
+													m.ParamInput1.Placeholder = "Start (e.g., 00:00:05 or 5)"
+													m.ParamInput2.Placeholder = "End (e.g., 00:00:30 or 30)"
 													if m.MediaInfo != nil {
 														m.ParamInput1.SetValue("0")
 														m.ParamInput2.SetValue(strconv.FormatFloat(m.MediaInfo.Duration.Seconds(), 'f', 2, 64))
@@ -171,7 +197,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 												case 2: // Split Video
 													m.EditOpts.ActiveTool = "split"
 													m.SubOptionsItems = []string{"Parameters Setup"}
-													m.ParamInput1.Placeholder = "Split point in seconds (e.g., 60)"
+													m.ParamInput1.Placeholder = "Split point (e.g., 00:01:00 or 60)"
 													m.ParamInput1.SetValue("0")
 													m.ActivePanel = PanelSubOptions
 													cmds = append(cmds, m.ParamInput1.Focus())
@@ -182,7 +208,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 												case 4: // Frame Export
 													m.EditOpts.ActiveTool = "frame"
 													m.SubOptionsItems = []string{"Parameters Setup"}
-													m.ParamInput1.Placeholder = "Timestamp (e.g., 5)"
+													m.ParamInput1.Placeholder = "Timestamp (e.g., 00:00:05 or 5)"
 													m.ParamInput1.SetValue("0")
 													m.ActivePanel = PanelSubOptions
 													cmds = append(cmds, m.ParamInput1.Focus())
@@ -230,7 +256,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 												maxDuration = m.MediaInfo.Duration.Seconds()
 											}
 
-											// Field transition logic within configuration steps
 											if m.EditOpts.ActiveTool == "trim" && m.SubMenuFocusIdx == 0 {
 												m.SubMenuFocusIdx = 1
 												m.ParamInput1.Blur()
@@ -267,7 +292,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 												return m, tea.Batch(cmds...)
 											}
 
-											// Validation logic and parameter execution setup
+											mainVid := ""
+											if len(m.EditOpts.InputFiles) > 0 {
+												mainVid = m.EditOpts.InputFiles[0]
+											}
+
 											switch m.SidebarIdx {
 												case 0: // Crop Video
 													if m.SubOptionsIdx == 3 {
@@ -278,27 +307,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 														m.EditOpts.CropPreset = presets[m.SubOptionsIdx]
 													}
 												case 1: // Trim Segment
-													t1, _ := ffmpeg.ParseDurationString(m.ParamInput1.Value())
-													t2, _ := ffmpeg.ParseDurationString(m.ParamInput2.Value())
+													t1, err1 := ffmpeg.ParseDurationString(m.ParamInput1.Value())
+													t2, err2 := ffmpeg.ParseDurationString(m.ParamInput2.Value())
+													if err1 != nil || err2 != nil {
+														m.ValidationError = "INVALID TIMESTAMP: Use HH:MM:SS or seconds."
+														cmds = append(cmds, clearErrorAfterTimeout())
+														return m, tea.Batch(cmds...)
+													}
 													if maxDuration > 0 && (t1 > maxDuration || t2 > maxDuration || t1 >= t2) {
 														m.ValidationError = fmt.Sprintf("OUT OF BOUNDS: Video length is %.2fs max.", maxDuration)
+														cmds = append(cmds, clearErrorAfterTimeout())
 														return m, tea.Batch(cmds...)
 													}
 													m.EditOpts.TrimStart = m.ParamInput1.Value()
 													m.EditOpts.TrimEnd = m.ParamInput2.Value()
 												case 2: // Split Video
-													sp, _ := ffmpeg.ParseDurationString(m.ParamInput1.Value())
+													sp, err := ffmpeg.ParseDurationString(m.ParamInput1.Value())
+													if err != nil {
+														m.ValidationError = "INVALID TIMESTAMP: Use HH:MM:SS or seconds."
+														cmds = append(cmds, clearErrorAfterTimeout())
+														return m, tea.Batch(cmds...)
+													}
 													if maxDuration > 0 && (sp >= maxDuration || sp <= 0) {
 														m.ValidationError = fmt.Sprintf("OUT OF BOUNDS: Split point must be between 0s and %.2fs.", maxDuration)
+														cmds = append(cmds, clearErrorAfterTimeout())
 														return m, tea.Batch(cmds...)
 													}
 													m.EditOpts.SplitPoint = m.ParamInput1.Value()
+												case 5: // Burn Subtitles
+													subPath := strings.TrimSpace(m.ParamInput1.Value())
+													if subPath == "" {
+														m.ValidationError = "ERROR: Missing subtitle file path."
+														cmds = append(cmds, clearErrorAfterTimeout())
+														return m, tea.Batch(cmds...)
+													}
+													resolved, err := ffmpeg.ResolveFilePath(subPath, mainVid)
+													if err != nil {
+														m.ValidationError = fmt.Sprintf("FILE NOT FOUND: Subtitle '%s' not found.", subPath)
+														cmds = append(cmds, clearErrorAfterTimeout())
+														return m, tea.Batch(cmds...)
+													}
+													m.ParamInput1.SetValue(resolved)
+													m.EditOpts.SubPath = resolved
 												case 6: // Convert Format
 													if m.SubOptionsIdx == 5 {
 														m.EditOpts.ActiveTool = "gif"
 														m.SubOptionsItems = []string{"Convert to Animated GIF"}
-														m.ParamInput1.Placeholder = "Start Time (leave empty for full video)"
-														m.ParamInput2.Placeholder = "End Time (leave empty for full video)"
+														m.ParamInput1.Placeholder = "Start Time (e.g., 00:00:00)"
+														m.ParamInput2.Placeholder = "End Time (e.g., 00:00:05)"
 														cmds = append(cmds, m.ParamInput1.Focus())
 														m.syncInputsToEditOpts()
 														m.UpdateLiveCommand()
@@ -318,9 +374,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 													audioPath := strings.TrimSpace(m.ParamInput1.Value())
 													if audioPath == "" {
 														m.ValidationError = "ERROR: Missing target audio file path."
+														cmds = append(cmds, clearErrorAfterTimeout())
 														return m, tea.Batch(cmds...)
 													}
-													m.EditOpts.AudioFilePath = audioPath
+													resolved, err := ffmpeg.ResolveFilePath(audioPath, mainVid)
+													if err != nil {
+														m.ValidationError = fmt.Sprintf("FILE NOT FOUND: Audio '%s' not found.", audioPath)
+														cmds = append(cmds, clearErrorAfterTimeout())
+														return m, tea.Batch(cmds...)
+													}
+													m.ParamInput1.SetValue(resolved)
+													m.EditOpts.AudioFilePath = resolved
 											}
 
 											m.syncInputsToEditOpts()
@@ -360,11 +424,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 												case MsgError:
 													m.ValidationError = fmt.Sprintf("Error probing file: %v", msg.Err)
+													cmds = append(cmds, clearErrorAfterTimeout())
 
 												case MsgFFmpegProgress:
 													if msg.Err != nil {
 														m.IsRunning = false
 														m.ValidationError = fmt.Sprintf("FFmpeg execution failed: %v", msg.Err)
+														m.History = append(m.History, HistoryItem{
+															Action:  strings.ToUpper(m.EditOpts.ActiveTool),
+																   Target:  msg.Err.Error(),
+																   Success: false,
+														})
+														cmds = append(cmds, clearErrorAfterTimeout())
 														return m, tea.Batch(cmds...)
 													}
 
@@ -386,8 +457,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 														}
 
 														m.History = append(m.History, HistoryItem{
-															Action: strings.ToUpper(m.EditOpts.ActiveTool),
-																   Target: outTarget,
+															Action:  strings.ToUpper(m.EditOpts.ActiveTool),
+																   Target:  outTarget,
+																   Success: true,
 														})
 														cmds = append(cmds, delayedReset())
 													}
@@ -402,7 +474,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 													cmds = append(cmds, cmd)
 	}
 
-	// Route text input keystrokes to active Bubble Tea text components
 	if m.ActivePanel == PanelConsole {
 		var cmd tea.Cmd
 		m.CmdInput, cmd = m.CmdInput.Update(msg)
@@ -416,7 +487,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ParamInput5, c5 = m.ParamInput5.Update(msg)
 		cmds = append(cmds, c1, c2, c3, c4, c5)
 
-		// Real-time synchronization: sync fields and recalculate live command string on keypress
 		m.syncInputsToEditOpts()
 		m.UpdateLiveCommand()
 	}

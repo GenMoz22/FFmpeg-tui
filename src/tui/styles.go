@@ -8,6 +8,7 @@ var (
 	ColorBorder   = lipgloss.Color("#44475A")
 	ColorAccent   = lipgloss.Color("#8BE9FD") // Cyan for submenus
 	ColorSuccess  = lipgloss.Color("#50FA7B") // History success
+	ColorError    = lipgloss.Color("#FF5555") // History & Validation error
 
 	BoxStyle = lipgloss.NewStyle().
 	Border(lipgloss.NormalBorder()).
@@ -24,4 +25,10 @@ var (
 	SubTitleStyle = lipgloss.NewStyle().
 	Foreground(ColorAccent).
 	Bold(true)
+
+	ErrorBannerStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#FFFFFF")).
+	Background(ColorError).
+	Bold(true).
+	Padding(0, 1)
 )

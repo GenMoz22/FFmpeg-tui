@@ -21,8 +21,9 @@ const (
 )
 
 type HistoryItem struct {
-	Action string
-	Target string
+	Action  string
+	Target  string
+	Success bool
 }
 
 type Model struct {

@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -32,12 +33,13 @@ type EditOptions struct {
 	OutputFile    string
 }
 
-// ParseDurationString converts duration strings (HH:MM:SS or MM:SS) into total seconds.
+// ParseDurationString converts duration strings (HH:MM:SS, MM:SS, or raw seconds) into total seconds.
 func ParseDurationString(s string) (float64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return 0, nil
 	}
+
 	if strings.Contains(s, ":") {
 		parts := strings.Split(s, ":")
 		var hours, minutes, seconds float64
@@ -62,14 +64,59 @@ func ParseDurationString(s string) (float64, error) {
 			if err != nil {
 				return 0, err
 			}
-			seconds, err = strconv.ParseFloat(parts[2], 64)
+			seconds, err = strconv.ParseFloat(parts[1], 64)
 			if err != nil {
 				return 0, err
 			}
 			return (minutes * 60) + seconds, nil
 		}
 	}
+
 	return strconv.ParseFloat(s, 64)
+}
+
+// ResolveFilePath implements smart path resolution for secondary files (subtitles, audio tracks).
+// Priority 1: Direct or absolute path as specified by user.
+// Priority 2: Relative to main media file directory (and its subdirectories).
+// Priority 3: Fallback search from root system directory.
+// Returns resolved absolute path if found, or empty string if not found.
+func ResolveFilePath(targetPath, mainVideoPath string) (string, error) {
+	targetPath = strings.TrimSpace(targetPath)
+	if targetPath == "" {
+		return "", fmt.Errorf("path provided is empty")
+	}
+
+	// Priority 1: Check exact specified relative/absolute path
+	if absPath, err := filepath.Abs(targetPath); err == nil {
+		if _, err := os.Stat(absPath); err == nil {
+			return absPath, nil
+		}
+	}
+
+	// Priority 2: Check relative to main media file directory
+	if mainVideoPath != "" {
+		videoAbs, err := filepath.Abs(mainVideoPath)
+		if err == nil {
+			videoDir := filepath.Dir(videoAbs)
+			candidate := filepath.Join(videoDir, targetPath)
+			if absCandidate, err := filepath.Abs(candidate); err == nil {
+				if _, err := os.Stat(absCandidate); err == nil {
+					return absCandidate, nil
+				}
+			}
+		}
+	}
+
+	// Priority 3: Fallback from root directory
+	rootDir := string(filepath.Separator)
+	candidateRoot := filepath.Join(rootDir, targetPath)
+	if absRootCandidate, err := filepath.Abs(candidateRoot); err == nil {
+		if _, err := os.Stat(absRootCandidate); err == nil {
+			return absRootCandidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("file '%s' not found in relative path, video directory, or root", targetPath)
 }
 
 // GetDerivedName constructs output filenames with custom suffixes or extensions.
@@ -184,7 +231,14 @@ func BuildCommand(opts EditOptions) []string {
 					}
 					styleExpr = append(styleExpr, fmt.Sprintf("Alignment=%s", alignment))
 
-					filterStr := fmt.Sprintf("subtitles='%s'", opts.SubPath)
+					resolvedSubPath, err := ResolveFilePath(opts.SubPath, inFile)
+					if err != nil {
+						resolvedSubPath = opts.SubPath
+					}
+					escapedSubPath := strings.ReplaceAll(resolvedSubPath, "\\", "/")
+					escapedSubPath = strings.ReplaceAll(escapedSubPath, ":", "\\:")
+
+					filterStr := fmt.Sprintf("subtitles='%s'", escapedSubPath)
 					if len(styleExpr) > 0 {
 						filterStr += fmt.Sprintf(":force_style='%s'", strings.Join(styleExpr, ","))
 					}
@@ -241,7 +295,11 @@ func BuildCommand(opts EditOptions) []string {
 					args = append(args, "-y", outName)
 
 				case "replaceaudio":
-					args = append(args, "-i", inFile, "-i", opts.AudioFilePath, "-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0", "-shortest")
+					resolvedAudioPath, err := ResolveFilePath(opts.AudioFilePath, inFile)
+					if err != nil {
+						resolvedAudioPath = opts.AudioFilePath
+					}
+					args = append(args, "-i", inFile, "-i", resolvedAudioPath, "-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0", "-shortest")
 					outName := GetDerivedName(inFile, "_newaudio", "")
 					args = append(args, "-y", outName)
 
