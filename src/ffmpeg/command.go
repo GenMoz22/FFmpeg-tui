@@ -9,7 +9,7 @@ import (
 
 type EditOptions struct {
 	InputFiles     []string
-	ActiveTool     string // "crop", "trim", "split", "audio", "frame", "subtitles", "convert"
+	ActiveTool     string
 	CropPreset     string
 	TrimStart      string
 	TrimEnd        string
@@ -17,19 +17,22 @@ type EditOptions struct {
 	ExtractFrame   string
 	NormalizeAudio bool
 
-	// Subtitles configuration parameters
-	SubPath        string
-	SubPos         string
-	SubOffset      string
-	SubBgColor     string
-	SubTextColor  string
+	SubPath      string
+	SubPos       string
+	SubOffset    string
+	SubBgColor   string
+	SubTextColor string
 
-	// Target format conversion override extension
-	TargetFormat   string // "mp4", "mkv", "mov", "avi", "mp3"
+	TargetFormat string
 
-	OutputFile     string
+	GifFPS        string
+	GifScale      string
+	CRFValue      string
+	AudioFilePath string
+	OutputFile    string
 }
 
+// ParseDurationString converts duration strings (HH:MM:SS or MM:SS) into total seconds.
 func ParseDurationString(s string) (float64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -42,23 +45,34 @@ func ParseDurationString(s string) (float64, error) {
 
 		if len(parts) == 3 {
 			hours, err = strconv.ParseFloat(parts[0], 64)
-			if err != nil { return 0, err }
+			if err != nil {
+				return 0, err
+			}
 			minutes, err = strconv.ParseFloat(parts[1], 64)
-			if err != nil { return 0, err }
+			if err != nil {
+				return 0, err
+			}
 			seconds, err = strconv.ParseFloat(parts[2], 64)
-			if err != nil { return 0, err }
+			if err != nil {
+				return 0, err
+			}
 			return (hours * 3600) + (minutes * 60) + seconds, nil
 		} else if len(parts) == 2 {
 			minutes, err = strconv.ParseFloat(parts[0], 64)
-			if err != nil { return 0, err }
-			seconds, err = strconv.ParseFloat(parts[1], 64)
-			if err != nil { return 0, err }
+			if err != nil {
+				return 0, err
+			}
+			seconds, err = strconv.ParseFloat(parts[2], 64)
+			if err != nil {
+				return 0, err
+			}
 			return (minutes * 60) + seconds, nil
 		}
 	}
 	return strconv.ParseFloat(s, 64)
 }
 
+// GetDerivedName constructs output filenames with custom suffixes or extensions.
 func GetDerivedName(inputPath, suffix, extOverride string) string {
 	base := filepath.Base(inputPath)
 	ext := filepath.Ext(base)
@@ -76,6 +90,7 @@ func GetDerivedName(inputPath, suffix, extOverride string) string {
 	return fmt.Sprintf("%s%s%s", nameWithoutExt, suffix, targetExt)
 }
 
+// BuildCommand returns the parameters slice for execution.
 func BuildCommand(opts EditOptions) []string {
 	var args []string
 	if len(opts.InputFiles) == 0 {
@@ -121,12 +136,19 @@ func BuildCommand(opts EditOptions) []string {
 					args = append(args, "-y", outName)
 
 				case "split":
-					args = append(args, "-to", opts.SplitPoint, "-i", inFile)
-					args = append(args, "-ss", opts.SplitPoint, "-i", inFile)
+					outName1 := GetDerivedName(inFile, "_part1", "")
+					outName2 := GetDerivedName(inFile, "_part2", "")
 
-					outName1 := GetDerivedName(inFile, "_split1", "")
-					outName2 := GetDerivedName(inFile, "_split2", "")
-					args = append(args, "-map", "0", "-y", outName1, "-map", "1", "-y", outName2)
+					splitPoint := opts.SplitPoint
+					if splitPoint == "" {
+						splitPoint = "0"
+					}
+
+					cmd1 := fmt.Sprintf("-ss 0 -i %s -to %s -c copy -avoid_negative_ts make_zero -y %s", inFile, splitPoint, outName1)
+					cmd2 := fmt.Sprintf("-ss %s -i %s -c copy -avoid_negative_ts make_zero -y %s", splitPoint, inFile, outName2)
+
+					fullCmd := fmt.Sprintf("%s && ffmpeg %s", cmd1, cmd2)
+					return strings.Split(fullCmd, " ")
 
 				case "audio":
 					args = append(args, "-i", inFile)
@@ -141,7 +163,6 @@ func BuildCommand(opts EditOptions) []string {
 						args = append(args, "-ss", opts.ExtractFrame)
 					}
 					args = append(args, "-i", inFile, "-vframes", "1")
-
 					sanitizedSec := strings.ReplaceAll(opts.ExtractFrame, ":", "-")
 					if sanitizedSec == "" {
 						sanitizedSec = "0"
@@ -151,12 +172,10 @@ func BuildCommand(opts EditOptions) []string {
 
 				case "subtitles":
 					args = append(args, "-i", inFile)
-
 					var styleExpr []string
 					if opts.SubBgColor != "" && opts.SubBgColor != "none" {
 						styleExpr = append(styleExpr, fmt.Sprintf("OutlineColour=&H80%s", opts.SubBgColor))
 					}
-
 					alignment := "2"
 					if opts.SubPos == "top" {
 						alignment = "6"
@@ -169,21 +188,66 @@ func BuildCommand(opts EditOptions) []string {
 					if len(styleExpr) > 0 {
 						filterStr += fmt.Sprintf(":force_style='%s'", strings.Join(styleExpr, ","))
 					}
-
 					args = append(args, "-vf", filterStr)
 					outName := GetDerivedName(inFile, "_sub", "")
 					args = append(args, "-y", outName)
 
 				case "convert":
-					// Direct streaming copy layout or native multi-format encapsulation processing
 					args = append(args, "-i", inFile)
 					if opts.TargetFormat == "mp3" {
-						// Extract audio streams exclusively when transcoding down to pure MP3 format
-						args = append(args, "-vn", "-acodec", "libmp3lame")
+						args = append(args, "-vn", "-acodec", "libmp3lame", "-q:a", "0")
 					} else {
 						args = append(args, "-c:v", "copy", "-c:a", "copy")
 					}
 					outName := GetDerivedName(inFile, "", opts.TargetFormat)
+					args = append(args, "-y", outName)
+
+				case "gif":
+					if opts.TrimStart != "" {
+						args = append(args, "-ss", opts.TrimStart)
+					}
+					if opts.TrimEnd != "" {
+						args = append(args, "-to", opts.TrimEnd)
+					}
+					args = append(args, "-i", inFile)
+
+					scale := opts.GifScale
+					if scale == "" {
+						scale = "480"
+					}
+					fps := opts.GifFPS
+					if fps == "" {
+						fps = "15"
+					}
+
+					vf := fmt.Sprintf("fps=%s,scale=%s:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse", fps, scale)
+					args = append(args, "-vf", vf)
+					outName := GetDerivedName(inFile, "", "gif")
+					args = append(args, "-y", outName)
+
+				case "compress":
+					args = append(args, "-i", inFile, "-vcodec", "libx264", "-crf", opts.CRFValue, "-preset", "medium")
+					outName := GetDerivedName(inFile, "_crf"+opts.CRFValue, "")
+					args = append(args, "-y", outName)
+
+				case "sepaudio":
+					outVideo := GetDerivedName(inFile, "_noaudio", "")
+					outAudio := GetDerivedName(inFile, "", "mp3")
+					args = append(args, "-i", inFile, "-an", "-vcodec", "copy", "-y", outVideo, "-i", inFile, "-vn", "-acodec", "libmp3lame", "-q:a", "0", "-y", outAudio)
+
+				case "metadata":
+					args = append(args, "-i", inFile, "-map_metadata", "-1", "-c", "copy")
+					outName := GetDerivedName(inFile, "_clean", "")
+					args = append(args, "-y", outName)
+
+				case "replaceaudio":
+					args = append(args, "-i", inFile, "-i", opts.AudioFilePath, "-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0", "-shortest")
+					outName := GetDerivedName(inFile, "_newaudio", "")
+					args = append(args, "-y", outName)
+
+				case "autocrop":
+					args = append(args, "-i", inFile, "-vf", "cropdetect=24:2:0,crop=iw:ih", "-c:a", "copy")
+					outName := GetDerivedName(inFile, "_autocrop", "")
 					args = append(args, "-y", outName)
 	}
 
