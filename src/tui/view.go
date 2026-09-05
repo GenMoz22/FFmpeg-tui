@@ -7,13 +7,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// View renders the TUI layout and UI components.
 func (m Model) View() string {
 	widthColLeft := 35
 	widthColMid := 45
-	widthColRight := 51
+	widthColRight := 55
 	totalWidth := widthColLeft + widthColMid + widthColRight + 4
 
-	// Left Column: Core modes navigation menu
+	// 1. Sidebar - Core Modes
 	var sbStyle = BoxStyle
 	if m.ActivePanel == PanelSidebar {
 		sbStyle = BoxFocusStyle
@@ -26,11 +27,11 @@ func (m Model) View() string {
 		}
 		sbLines = append(sbLines, fmt.Sprintf("%s%s", prefix, item))
 	}
-	sidebarView := sbStyle.Width(widthColLeft).Height(13).Render(
+	sidebarView := sbStyle.Width(widthColLeft).Height(16).Render(
 		TitleStyle.Render("CORE MODES") + "\n\n" + strings.Join(sbLines, "\n"),
 	)
 
-	// Middle Column: Parameter selection / Form structures
+	// 2. Middle Column - Parameter Controls
 	var subStyle = BoxStyle
 	if m.ActivePanel == PanelSubOptions {
 		subStyle = BoxFocusStyle
@@ -45,23 +46,26 @@ func (m Model) View() string {
 	}
 
 	subContent := strings.Join(subLines, "\n")
-	if m.EditOpts.ActiveTool == "trim" {
-		subContent += "\n\n" +
-		"Start Position:\n" + m.ParamInput1.View() + "\n" +
-		"End Position:\n" + m.ParamInput2.View()
-	} else if m.EditOpts.ActiveTool == "split" {
-		subContent += "\n\n" +
-		"Split At Timestamp:\n" + m.ParamInput1.View()
-	} else if m.EditOpts.ActiveTool == "frame" {
-		subContent += "\n\n" +
-		"Frame Extraction Target:\n" + m.ParamInput1.View()
-	} else if m.EditOpts.ActiveTool == "subtitles" {
-		subContent += "\n\n" +
-		"SRT File Path: " + m.ParamInput1.View() + "\n" +
-		"Pos (top/bot): " + m.ParamInput2.View() + "\n" +
-		"Offset (px):   " + m.ParamInput3.View() + "\n" +
-		"Bg Color:      " + m.ParamInput4.View() + "\n" +
-		"Text Color:    " + m.ParamInput5.View()
+
+	switch m.EditOpts.ActiveTool {
+		case "trim":
+			subContent += "\n\nStart Position:\n" + m.ParamInput1.View() + "\nEnd Position:\n" + m.ParamInput2.View()
+		case "split":
+			subContent += "\n\nSplit Timestamp:\n" + m.ParamInput1.View()
+		case "frame":
+			subContent += "\n\nExtract Timestamp:\n" + m.ParamInput1.View()
+		case "subtitles":
+			subContent += "\n\nSRT File:\n" + m.ParamInput1.View() +
+			"\nPosition (top/bottom/center):\n" + m.ParamInput2.View() +
+			"\nOffset (px):\n" + m.ParamInput3.View() +
+			"\nBackground Color:\n" + m.ParamInput4.View() +
+			"\nText Color:\n" + m.ParamInput5.View()
+		case "gif":
+			subContent += "\n\nStart (Optional):\n" + m.ParamInput1.View() + "\nEnd (Optional):\n" + m.ParamInput2.View()
+		case "compress":
+			subContent += "\n\n" + lipgloss.NewStyle().Foreground(ColorInactive).Render("CRF 23: Balanced quality / visually lossless.\nCRF 28: High compression for web/social sharing.")
+		case "replaceaudio":
+			subContent += "\n\nAudio File Path:\n" + m.ParamInput1.View()
 	}
 
 	if m.ValidationError != "" {
@@ -69,55 +73,71 @@ func (m Model) View() string {
 		subContent += "\n\n" + errStyle.Render("[!] "+m.ValidationError)
 	}
 
-	subView := subStyle.Width(widthColMid).Height(13).Render(
+	subView := subStyle.Width(widthColMid).Height(16).Render(
 		SubTitleStyle.Render("PARAMETER CONTROLS") + "\n\n" + subContent,
 	)
 
-	// Right Column: Target analysis panel info tracer
+	// 3. Right Column - Target Analyzer (ffprobe metadata)
 	var infoLines []string
 	if m.MediaInfo != nil {
 		infoLines = append(infoLines, fmt.Sprintf("[-] File: %s", m.MediaInfo.Path))
 		infoLines = append(infoLines, fmt.Sprintf("[-] Duration: %s", m.MediaInfo.FormatDuration()))
+		infoLines = append(infoLines, fmt.Sprintf("[-] Size: %.2f MB", float64(m.MediaInfo.Size)/(1024*1024)))
+		infoLines = append(infoLines, fmt.Sprintf("[-] Total Bitrate: %d kbps", m.MediaInfo.Bitrate/1000))
+
 		if m.MediaInfo.Video != nil {
-			infoLines = append(infoLines, fmt.Sprintf("[-] Video: %s (%dx%d)", strings.ToUpper(m.MediaInfo.Video.Codec), m.MediaInfo.Video.Width, m.MediaInfo.Video.Height))
+			infoLines = append(infoLines, lipgloss.NewStyle().Foreground(ColorAccent).Render("--- Video Stream ---"))
+			infoLines = append(infoLines, fmt.Sprintf("  • Codec: %s", strings.ToUpper(m.MediaInfo.Video.Codec)))
+			infoLines = append(infoLines, fmt.Sprintf("  • Resolution: %dx%d", m.MediaInfo.Video.Width, m.MediaInfo.Video.Height))
+			infoLines = append(infoLines, fmt.Sprintf("  • Framerate: %s FPS", m.MediaInfo.Video.FPS))
+			infoLines = append(infoLines, fmt.Sprintf("  • Aspect Ratio: %s", m.MediaInfo.Video.AspectRatio))
 		}
 		if m.MediaInfo.Audio != nil {
-			infoLines = append(infoLines, fmt.Sprintf("[-] Audio: %s", strings.ToUpper(m.MediaInfo.Audio.Codec)))
+			infoLines = append(infoLines, lipgloss.NewStyle().Foreground(ColorAccent).Render("--- Audio Stream ---"))
+			infoLines = append(infoLines, fmt.Sprintf("  • Codec: %s", strings.ToUpper(m.MediaInfo.Audio.Codec)))
+			infoLines = append(infoLines, fmt.Sprintf("  • Channels: %d", m.MediaInfo.Audio.Channels))
+			infoLines = append(infoLines, fmt.Sprintf("  • Sample Rate: %s Hz", m.MediaInfo.Audio.SampleRate))
 		}
 	} else {
-		infoLines = append(infoLines, "Parsing resource stream metadata...")
+		infoLines = append(infoLines, "Probing media info with ffprobe...")
 	}
-	infoView := BoxStyle.Width(widthColRight).Height(13).Render(
-		TitleStyle.Render("TARGET ANALYZER") + "\n\n" + strings.Join(infoLines, "\n"),
+	infoView := BoxStyle.Width(widthColRight).Height(16).Render(
+		TitleStyle.Render("FFPROBE TARGET ANALYZER") + "\n\n" + strings.Join(infoLines, "\n"),
 	)
 
-	// Lower Panel 1: Live Command Instruction Engine Console
+	// 4. Lower Console Panel
 	var consoleStyle = BoxStyle
 	if m.ActivePanel == PanelConsole {
 		consoleStyle = BoxFocusStyle
 	}
+
+	statusText := "READY"
+	if m.IsRunning {
+		statusText = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFB86C")).Bold(true).Render("PROCESSING... (Please wait)")
+	}
+
 	helpText := lipgloss.NewStyle().Foreground(ColorInactive).Render(
-		"[Tab] Switch Windows  |  [Enter] Select Field or Execute Pipeline  |  [Esc] Abort Task",
+		"[Tab] Switch Windows  |  [Enter] Confirm & Run  |  [Esc] Quit",
 	)
 	consoleView := consoleStyle.Width(totalWidth).Height(7).Render(
 		TitleStyle.Render("LIVE COMMAND") + "\n\n" +
 		m.CmdInput.View() + "\n\n" +
-		"Status: " + m.ProgressBar.View() + "\n\n" +
+		"Status: " + statusText + "  " + m.ProgressBar.View() + "\n\n" +
 		helpText,
 	)
 
-	// Lower Panel 2: Operational Log History Tracker
+	// 5. Session History Panel
 	var historyLines []string
 	if len(m.History) == 0 {
-		historyLines = append(historyLines, lipgloss.NewStyle().Foreground(ColorInactive).Render("No actions executed in this session."))
+		historyLines = append(historyLines, lipgloss.NewStyle().Foreground(ColorInactive).Render("No operations completed in this session."))
 	} else {
 		for _, h := range m.History {
-			historyLines = append(historyLines, fmt.Sprintf("[+] [%s] Job closed ➔ Target: %s",
+			historyLines = append(historyLines, fmt.Sprintf("[+] [%s] Executed successfully ➔ Generated file: %s",
 									lipgloss.NewStyle().Foreground(ColorSuccess).Render(h.Action), h.Target))
 		}
 	}
 	historyView := BoxStyle.Width(totalWidth).Height(5).Render(
-		TitleStyle.Render("SESSION RUNTIME HISTORY") + "\n\n" +
+		TitleStyle.Render("SESSION HISTORY LOG") + "\n\n" +
 		strings.Join(historyLines, "\n"),
 	)
 
