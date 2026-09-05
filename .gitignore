@@ -31,6 +31,10 @@ go.work.sum
 .vscode/
 
 # file for test
-.mp4
-.srt
-.mp3
+*.mp4
+*.srt
+*.mp3
+*.gif
+*.mkv
+*.mov
+*.avi
