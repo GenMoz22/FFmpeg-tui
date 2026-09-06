@@ -5,19 +5,29 @@ Every action you select instantly constructs the exact, raw FFmpeg command line 
 
 
 ## Key Features
-*   **Live Command Engine:** View the real-time compilation of your FFmpeg command as you toggle filters. Switch focus directly to the command panel to type, edit, or inject custom flags manually.
-*   **Media Analysis (FFprobe):** Automatically inspects incoming files upon launch, displaying resolution, duration, codecs, size, and bitrate.
-*   **Asynchronous Processing Chain:** Runs FFmpeg tasks in non-blocking background threads, parsing the progress stream in real-time onto a responsive TUI progress bar.
-*   **Input Validation Guard:** Automatically parses and evaluates input timestamps (`hh:mm:ss` or raw seconds) against the actual media duration to prevent illegal encoding ranges (e.g., out-of-bounds trimming).
-*   **Essential Video Filters & Tools:**
-    *   Pre-configured cropping aspects (9:16 Shorts/Reels, 1:1 Square, 16:9 Widescreen).
-    *   Precise video trimming with runtime validation.
-    *   Fixed 2-way video splitting based on a selected target timestamp.
-    *   Single-frame extraction to PNG.
-    *   Audio volume normalization (`loudnorm`).
-    *   Advanced subtitle hardburning with granular control over text layout placement (bottom, top, center), background overlays, vertical pixel offsets, and custom text colors.
-    *   Container format conversion (MP4, MKV, MOV, AVI, and pure MP3 audio extraction) mapping output filenames directly from the original source file.
 
+* **Live Interactive Command Engine:** Real-time generation and editing of FFmpeg pipeline arguments. Switch focus directly to the terminal input matrix to modify or inject manual parameters.
+* **Target Analyzer (FFprobe Integration):** Asynchronously probes incoming media upon startup, displaying resolution, duration, bitrate, file size, frames per second, and codec parameters.
+* **Non-Blocking Execution & Progress Streaming:** Runs FFmpeg background tasks using Go contexts while parsing `stderr` time logs into responsive TUI progress indicators.
+* **Input Validation Guard:** Parses inputs (`hh:mm:ss` or raw seconds) against actual probed media duration to prevent illegal encoding operations (e.g., out-of-bound trimming or invalid split points).
+* **Smart Secondary File Resolution:** Automatically resolves relative or absolute paths for external assets (subtitles, custom audio tracks) relative to the active working directory or source media path.
+* **Session History Tracking:** Logs all executed operations, showing real-time success or failure statuses alongside target output file destinations.
+
+### Supported Tools & Operations
+
+| Tool | Description | Configurable Parameters |
+| :--- | :--- | :--- |
+| **Crop Video** | Aspect ratio transformation or automated crop detection | `9:16` (Shorts/Reels), `1:1` (Square), `16:9` (Widescreen), `Auto Crop Black Bars` (`cropdetect`) |
+| **Trim Segment** | Precise lossy/lossless video clipping | Start & End Timestamps (`HH:MM:SS` or seconds) |
+| **Split Video** | Chained 2-way split based on a target timestamp | Cutoff Timestamp (`HH:MM:SS` or seconds) |
+| **Audio Normalization** | Volume equalization using EBU R128 standard | Automatic `loudnorm` filter integration (`I=-16`, `TP=-1.5`, `LRA=11`) |
+| **Frame Export** | Extract a single still frame as PNG | Extraction Timestamp (`HH:MM:SS` or seconds) |
+| **Burn Subtitles** | Hardburn `.srt` subtitles with custom styling | File Path, Alignment Position (`bottom`, `top`, `center`), Vertical Offset (px), Background Overlay Color, Text Color |
+| **Convert Format** | Re-encode containers or convert to Animated GIF | `MP4`, `MKV`, `MOV`, `AVI`, `MP3` (Pure Audio), `Animated GIF` (with custom palette generation and Lanczos scaling) |
+| **CRF Compression** | Balance image quality and file size via x264 | `CRF 23` (Visually Lossless / Balanced), `CRF 28` (High Compression / Social Sharing) |
+| **Separate Video/Audio** | Multi-output extraction stream | Strips audio into clean video + extracts high-quality audio (`.mp3`) simultaneously |
+| **Strip Metadata** | Privacy cleaner | Strips global metadata tags and stream details (`-map_metadata -1`) |
+| **Replace Audio Track** | Audio track override | Input Audio Track Path (`.mp3`, `.wav`, `.m4a`), maps video from stream 0 and audio from stream 1 |
 
 
 ## The Tech Stack
@@ -34,7 +44,14 @@ To run and execute jobs with this tool, you must have the **FFmpeg** binaries in
 
 ### Linux
 ```bash
+# Debian/Ubuntu
 sudo apt update && sudo apt install ffmpeg
+
+# Fedora
+sudo dnf install ffmpeg
+
+# Arch Linux
+sudo pacman -S ffmpeg
 ```
 ### macOS
 ```Bash
@@ -54,7 +71,7 @@ winget install FFmpeg
     * Inside the Core Operations Menu: Focus the configuration panel for the selected filter tool.
     * Inside Parameter Configuration Panel: Lock in changes and bounce focus down to the console window.
     * Inside the Live Command Input: Execute the visible FFmpeg pipeline.
-- q or Ctrl + C : Abort the current encoding job or safely exit the application.
+- Esc or Ctrl + C : Abort the current encoding job or safely exit the application.
 
 ## Compilation
 Ensure you have Go installed on your machine, then clone this repository and follow these steps to compile from source.
@@ -89,13 +106,14 @@ ffmpeg-tui/
     ├── main.go            # Application Entrypoint: parses arguments and initializes the Bubble Tea loop
     │
     ├── ffmpeg/            # Core Module: Handles low-level process wrapper interactions
-    │   ├── command.go     # Declares editing schemas and builds raw FFmpeg flag string arrays
-    │   ├── ffprobe.go     # Probes media tracks via FFprobe asynchronous JSON pipes
-    │   └── process.go     # Spawns OS execution channels, reads stderr streams, and yields progress tracking
+    │   ├── command.go     # Edit options data models and command builder logic
+    │   ├── ffprobe.go     # Asynchronous media probing and metadata parser
+    │   └── runner.go      # Process execution, OS channel spawning, and progress listener
     │
     └── tui/               # Interface Module: Houses user interface layouts and event handling
         ├── model.go       # Defines Elm-architecture runtime application states and global struct fields
-        ├── view.go        # Pure view engine building responsive text matrices using Lipgloss blocks
+        ├── view.go        # UI layout rendering engine built with Lipgloss
         ├── update.go      # Event multiplexer responding to key strokes, ticks, and state changes
-        └── styles.go      # Shared styling variables containing colors, box borders, and theme tokens
+        ├── messages.go    # Internal Bubble Tea message definitions
+        └── styles.go      # Theme colors, borders, and style variables
 ```
