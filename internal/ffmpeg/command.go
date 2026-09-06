@@ -166,7 +166,7 @@ func BuildCommand(opts EditOptions) []string {
 
 			if len(filterComplex) > 0 {
 				args = append(args, "-filter_complex", strings.Join(filterComplex, ";"))
-				args = append(args, "-map", videoLabel)
+				args = append(args, "-map", videoLabel, "-map", "0:a?", "-c:v", "libx264", "-c:a", "copy")
 			}
 			outName := GetDerivedName(inFile, "_crop", "")
 			args = append(args, "-y", outName)
@@ -304,7 +304,7 @@ func BuildCommand(opts EditOptions) []string {
 					args = append(args, "-y", outName)
 
 				case "autocrop":
-					args = append(args, "-i", inFile, "-vf", "cropdetect=24:2:0,crop=iw:ih", "-c:a", "copy")
+					args = append(args, "-i", inFile, "-vf", "cropdetect=24:2:0,crop=iw:ih", "-map", "0:v:0", "-map", "0:a?", "-c:a", "copy")
 					outName := GetDerivedName(inFile, "_autocrop", "")
 					args = append(args, "-y", outName)
 	}
