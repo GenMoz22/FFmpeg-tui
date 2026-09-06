@@ -2,10 +2,7 @@
 
 Every action you select instantly constructs the exact, raw FFmpeg command line in real-time, allowing you to learn the flag syntax or tweak the final parameters manually before execution.
 
-
-
 ## Key Features
-
 * **Live Interactive Command Engine:** Real-time generation and editing of FFmpeg pipeline arguments. Switch focus directly to the terminal input matrix to modify or inject manual parameters.
 * **Target Analyzer (FFprobe Integration):** Asynchronously probes incoming media upon startup, displaying resolution, duration, bitrate, file size, frames per second, and codec parameters.
 * **Non-Blocking Execution & Progress Streaming:** Runs FFmpeg background tasks using Go contexts while parsing `stderr` time logs into responsive TUI progress indicators.
@@ -87,7 +84,7 @@ go mod tidy
 2. Build the Binary
 ```Bash
 # Compile into a single, standalone binary named 'ffmpeg-tui'
-go build -o ffmpeg-tui src/main.go
+go build -o ffmpeg-tui  ./cmd/ffmpeg-tui 
 ```
 
 3. Run the Application
@@ -98,22 +95,22 @@ Pass any local video or audio file as an argument to launch the terminal dashboa
 
 ## Structural Schema
 ```
-ffmpeg-tui/
-├── go.mod                 # Core Go module manifesto tracking external structural dependencies
-├── go.sum                 # Cryptographic checksums for exact project package locks
-│
-└── src/
-    ├── main.go            # Application Entrypoint: parses arguments and initializes the Bubble Tea loop
-    │
-    ├── ffmpeg/            # Core Module: Handles low-level process wrapper interactions
-    │   ├── command.go     # Edit options data models and command builder logic
-    │   ├── ffprobe.go     # Asynchronous media probing and metadata parser
-    │   └── runner.go      # Process execution, OS channel spawning, and progress listener
-    │
-    └── tui/               # Interface Module: Houses user interface layouts and event handling
-        ├── model.go       # Defines Elm-architecture runtime application states and global struct fields
-        ├── view.go        # UI layout rendering engine built with Lipgloss
-        ├── update.go      # Event multiplexer responding to key strokes, ticks, and state changes
-        ├── messages.go    # Internal Bubble Tea message definitions
-        └── styles.go      # Theme colors, borders, and style variables
+FFmpeg-tui
+├── cmd
+│   └── ffmpeg-tui
+│       └── main.go       # Application Entrypoint: parses arguments and initializes the Bubble Tea loop
+├── internal
+│   ├── ffmpeg            # Core Module: Handles low-level process wrapper interactions
+│   │   ├── command.go    # Edit options data models and command builder logic
+│   │   ├── ffprobe.go    # Asynchronous media probing and metadata parser
+│   │   └── runner.go     # Process execution, OS channel spawning, and progress listener
+│   └── tui               # Interface Module: Houses user interface layouts and event handling
+│       ├── messages.go   # Internal Bubble Tea message definitions
+│       ├── model.go      # Defines Elm-architecture runtime application states and global struct fields
+│       ├── styles.go     # Theme colors, borders, and style variables
+│       ├── update.go     # Event multiplexer responding to key strokes, ticks, and state changes
+│       └── view.go       # UI layout rendering engine built with Lipgloss
+├── go.mod                # Core Go module manifesto tracking external structural dependencies
+├── go.sum                # Cryptographic checksums for exact project package locks
+└── README.md
 ```

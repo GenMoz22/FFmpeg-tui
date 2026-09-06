@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"ffmpeg-tui/src/ffmpeg"
+	"ffmpeg-tui/internal/ffmpeg"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/textinput"

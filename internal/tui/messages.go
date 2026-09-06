@@ -1,6 +1,6 @@
 package tui
 
-import "ffmpeg-tui/src/ffmpeg"
+import "ffmpeg-tui/internal/ffmpeg"
 
 // MsgFFmpegProgress carries progress percentage and execution status from FFmpeg.
 type MsgFFmpegProgress ffmpeg.ProgressMessage

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"ffmpeg-tui/src/ffmpeg"
+	"ffmpeg-tui/internal/ffmpeg"
 
 	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
