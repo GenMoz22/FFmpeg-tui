@@ -137,6 +137,15 @@ func GetDerivedName(inputPath, suffix, extOverride string) string {
 	return fmt.Sprintf("%s%s%s", nameWithoutExt, suffix, targetExt)
 }
 
+// escapeFFmpegFilterPath escapes special characters for FFmpeg filter arguments (subtitles, etc.).
+func escapeFFmpegFilterPath(path string) string {
+	escaped := strings.ReplaceAll(path, "\\", "/")
+	escaped = strings.ReplaceAll(escaped, "'", "'\\''")
+	escaped = strings.ReplaceAll(escaped, ":", "\\:")
+	escaped = strings.ReplaceAll(escaped, " ", "\\ ")
+	return escaped
+}
+
 // BuildCommand returns the parameters slice for execution.
 func BuildCommand(opts EditOptions) []string {
 	var args []string
@@ -191,11 +200,11 @@ func BuildCommand(opts EditOptions) []string {
 						splitPoint = "0"
 					}
 
-					cmd1 := fmt.Sprintf("-ss 0 -i %s -to %s -c copy -avoid_negative_ts make_zero -y %s", inFile, splitPoint, outName1)
-					cmd2 := fmt.Sprintf("-ss %s -i %s -c copy -avoid_negative_ts make_zero -y %s", splitPoint, inFile, outName2)
+					cmd1 := fmt.Sprintf("-ss 0 -i %q -to %s -c copy -avoid_negative_ts make_zero -y %q", inFile, splitPoint, outName1)
+					cmd2 := fmt.Sprintf("-ss %s -i %q -c copy -avoid_negative_ts make_zero -y %q", splitPoint, inFile, outName2)
 
 					fullCmd := fmt.Sprintf("%s && ffmpeg %s", cmd1, cmd2)
-					return strings.Split(fullCmd, " ")
+					return []string{"__SHELL_CMD__", fullCmd}
 
 				case "audio":
 					args = append(args, "-i", inFile)
@@ -235,8 +244,7 @@ func BuildCommand(opts EditOptions) []string {
 					if err != nil {
 						resolvedSubPath = opts.SubPath
 					}
-					escapedSubPath := strings.ReplaceAll(resolvedSubPath, "\\", "/")
-					escapedSubPath = strings.ReplaceAll(escapedSubPath, ":", "\\:")
+					escapedSubPath := escapeFFmpegFilterPath(resolvedSubPath)
 
 					filterStr := fmt.Sprintf("subtitles='%s'", escapedSubPath)
 					if len(styleExpr) > 0 {

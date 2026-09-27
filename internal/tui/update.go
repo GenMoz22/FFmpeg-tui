@@ -38,6 +38,47 @@ func clearErrorAfterTimeout() tea.Cmd {
 	})
 }
 
+// parseCmdArgs splits a command line string into a slice of arguments, respecting single and double quotes.
+func parseCmdArgs(cmdStr string) []string {
+	var args []string
+	var current strings.Builder
+	inDoubleQuotes := false
+	inSingleQuotes := false
+
+	for i := 0; i < len(cmdStr); i++ {
+		r := cmdStr[i]
+		switch r {
+			case '"':
+				if !inSingleQuotes {
+					inDoubleQuotes = !inDoubleQuotes
+				} else {
+					current.WriteByte(r)
+				}
+			case '\'':
+				if !inDoubleQuotes {
+					inSingleQuotes = !inSingleQuotes
+				} else {
+					current.WriteByte(r)
+				}
+			case ' ', '\t':
+				if inDoubleQuotes || inSingleQuotes {
+					current.WriteByte(r)
+				} else if current.Len() > 0 {
+					args = append(args, current.String())
+					current.Reset()
+				}
+			default:
+				current.WriteByte(r)
+		}
+	}
+
+	if current.Len() > 0 {
+		args = append(args, current.String())
+	}
+
+	return args
+}
+
 // syncInputsToEditOpts binds current active input text fields into the underlying EditOptions model.
 func (m *Model) syncInputsToEditOpts() {
 	mainVid := ""
@@ -412,7 +453,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 												durationSec = m.MediaInfo.Duration.Seconds()
 											}
 
-											customArgs := strings.Split(strings.TrimPrefix(m.CmdInput.Value(), "ffmpeg "), " ")
+											rawCmd := strings.TrimPrefix(m.CmdInput.Value(), "ffmpeg ")
+											customArgs := parseCmdArgs(rawCmd)
 											m.ProgressChan = ffmpeg.ExecuteFFmpeg(ctx, customArgs, durationSec)
 											cmds = append(cmds, listenToProgress(m.ProgressChan))
 										}

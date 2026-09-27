@@ -137,6 +137,19 @@ func probeMediaCmd(path string) tea.Cmd {
 	}
 }
 
+// FormatCommandLine quotes arguments containing spaces to build a valid CLI command representation.
+func FormatCommandLine(args []string) string {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		if strings.Contains(arg, " ") && !strings.HasPrefix(arg, "\"") && !strings.HasPrefix(arg, "'") {
+			quoted[i] = fmt.Sprintf("%q", arg)
+		} else {
+			quoted[i] = arg
+		}
+	}
+	return strings.Join(quoted, " ")
+}
+
 // UpdateLiveCommand synchronizes the active command string shown in the UI with current options.
 func (m *Model) UpdateLiveCommand() {
 	args := ffmpeg.BuildCommand(m.EditOpts)
@@ -146,11 +159,11 @@ func (m *Model) UpdateLiveCommand() {
 		return
 	}
 
-	fullArgs := strings.Join(args, " ")
-
-	if strings.Contains(fullArgs, "&&") {
-		m.CmdInput.SetValue(fmt.Sprintf("ffmpeg %s", fullArgs))
-	} else {
-		m.CmdInput.SetValue(fmt.Sprintf("ffmpeg %s", fullArgs))
+	if len(args) == 2 && args[0] == "__SHELL_CMD__" {
+		m.CmdInput.SetValue(fmt.Sprintf("ffmpeg %s", args[1]))
+		return
 	}
+
+	fullArgs := FormatCommandLine(args)
+	m.CmdInput.SetValue(fmt.Sprintf("ffmpeg %s", fullArgs))
 }

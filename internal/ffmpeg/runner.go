@@ -23,13 +23,13 @@ func ExecuteFFmpeg(ctx context.Context, args []string, totalDurationSec float64)
 		defer close(outChan)
 
 		var cmd *exec.Cmd
-		fullArgsStr := strings.Join(args, " ")
 
-		if strings.Contains(fullArgsStr, "&&") {
+		if len(args) == 2 && args[0] == "__SHELL_CMD__" {
+			fullCmd := args[1]
 			if runtime.GOOS == "windows" {
-				cmd = exec.CommandContext(ctx, "cmd", "/C", "ffmpeg "+fullArgsStr)
+				cmd = exec.CommandContext(ctx, "cmd", "/C", "ffmpeg "+fullCmd)
 			} else {
-				cmd = exec.CommandContext(ctx, "sh", "-c", "ffmpeg "+fullArgsStr)
+				cmd = exec.CommandContext(ctx, "sh", "-c", "ffmpeg "+fullCmd)
 			}
 		} else {
 			cmd = exec.CommandContext(ctx, "ffmpeg", args...)
