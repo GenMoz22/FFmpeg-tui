@@ -4,8 +4,9 @@
 *.dll
 *.so
 *.dylib
-ffmpeg-tui.*
-ffmpeg-tui
+/ffmpeg-tui
+/ffmpeg-tui.*
+dist/
 
 # Test binary, built with `go test -c`
 *.test
