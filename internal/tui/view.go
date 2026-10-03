@@ -25,7 +25,7 @@ func (m Model) View() string {
 		if i == m.SidebarIdx {
 			prefix = lipgloss.NewStyle().Foreground(ColorActive).Render(">> ")
 		}
-		sbLines = append(sbLines, fmt.Sprintf("%s%s", prefix, item))
+		sbLines = append(sbLines, fmt.Sprintf("%s%s", prefix, item.Title))
 	}
 	sidebarView := sbStyle.Width(widthColLeft).Height(16).Render(
 		TitleStyle.Render("CORE MODES") + "\n\n" + strings.Join(sbLines, "\n"),

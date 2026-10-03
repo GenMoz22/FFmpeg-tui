@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -140,7 +139,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.ActivePanel == PanelSidebar {
 						m.ActivePanel = PanelSubOptions
 						m.SubMenuFocusIdx = 0
-						if len(m.SubOptionsItems) > 0 && m.SidebarIdx != 0 && m.SidebarIdx != 6 && m.SidebarIdx != 3 && m.SidebarIdx != 7 && m.SidebarIdx != 8 && m.SidebarIdx != 9 {
+						currentKind := m.SidebarItems[m.SidebarIdx].Kind
+						if len(m.SubOptionsItems) > 0 && currentKind != ModeCrop && currentKind != ModeConvert && currentKind != ModeAudioNorm && currentKind != ModeCompress && currentKind != ModeSepAudio && currentKind != ModeMetadata {
 							cmds = append(cmds, m.ParamInput1.Focus())
 						}
 					} else if m.ActivePanel == PanelSubOptions {
@@ -150,7 +150,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.ParamInput4.Blur()
 						m.ParamInput5.Blur()
 
-						if m.SidebarIdx == 1 { // Trim tool multi-field cycling
+						currentKind := m.SidebarItems[m.SidebarIdx].Kind
+						if currentKind == ModeTrim {
 							if m.SubMenuFocusIdx == 0 {
 								m.SubMenuFocusIdx = 1
 								cmds = append(cmds, m.ParamInput2.Focus())
@@ -158,7 +159,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								m.ActivePanel = PanelConsole
 								cmds = append(cmds, m.CmdInput.Focus())
 							}
-						} else if m.SidebarIdx == 5 { // Subtitles multi-field cycling
+						} else if currentKind == ModeSubtitles {
 							if m.SubMenuFocusIdx < 4 {
 								m.SubMenuFocusIdx++
 								switch m.SubMenuFocusIdx {
@@ -175,7 +176,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								m.ActivePanel = PanelConsole
 								cmds = append(cmds, m.CmdInput.Focus())
 							}
-						} else if m.SidebarIdx == 6 && m.SubOptionsIdx == 5 { // GIF conversion sub-option
+						} else if currentKind == ModeConvert && m.EditOpts.ActiveTool == "gif" {
 							if m.SubMenuFocusIdx == 0 {
 								m.SubMenuFocusIdx = 1
 								cmds = append(cmds, m.ParamInput2.Focus())
@@ -196,98 +197,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 										m.ValidationError = ""
 										if m.ActivePanel == PanelSidebar && m.SidebarIdx > 0 {
 											m.SidebarIdx--
-										} else if m.ActivePanel == PanelSubOptions && (m.SidebarIdx == 0 || m.SidebarIdx == 6 || m.SidebarIdx == 7) && m.SubOptionsIdx > 0 {
-											m.SubOptionsIdx--
+											m.SelectSidebarItem(m.SidebarIdx)
+											m.syncInputsToEditOpts()
+											m.UpdateLiveCommand()
+										} else if m.ActivePanel == PanelSubOptions {
+											currentKind := m.SidebarItems[m.SidebarIdx].Kind
+											if (currentKind == ModeCrop || currentKind == ModeConvert || currentKind == ModeCompress) && m.SubOptionsIdx > 0 {
+												m.SubOptionsIdx--
+											}
 										}
 
 									case "down", "j":
 										m.ValidationError = ""
 										if m.ActivePanel == PanelSidebar && m.SidebarIdx < len(m.SidebarItems)-1 {
 											m.SidebarIdx++
-										} else if m.ActivePanel == PanelSubOptions && (m.SidebarIdx == 0 || m.SidebarIdx == 6 || m.SidebarIdx == 7) && m.SubOptionsIdx < len(m.SubOptionsItems)-1 {
-											m.SubOptionsIdx++
+											m.SelectSidebarItem(m.SidebarIdx)
+											m.syncInputsToEditOpts()
+											m.UpdateLiveCommand()
+										} else if m.ActivePanel == PanelSubOptions {
+											currentKind := m.SidebarItems[m.SidebarIdx].Kind
+											if (currentKind == ModeCrop || currentKind == ModeConvert || currentKind == ModeCompress) && m.SubOptionsIdx < len(m.SubOptionsItems)-1 {
+												m.SubOptionsIdx++
+											}
 										}
 
 									case "enter":
 										m.ValidationError = ""
 										if m.ActivePanel == PanelSidebar {
-											m.SubOptionsIdx = 0
-											m.SubMenuFocusIdx = 0
-											m.ParamInput1.SetValue("")
-											m.ParamInput2.SetValue("")
-											m.ParamInput3.SetValue("")
-											m.ParamInput4.SetValue("")
-											m.ParamInput5.SetValue("")
+											m.SelectSidebarItem(m.SidebarIdx)
 
-											switch m.SidebarIdx {
-												case 0: // Crop Video
-													m.EditOpts.ActiveTool = "crop"
-													m.SubOptionsItems = []string{"9:16 (Shorts/Reels)", "1:1 (Square)", "16:9 (Widescreen)", "Auto Crop Black Bars"}
-													m.ActivePanel = PanelSubOptions
-												case 1: // Trim Segment
-													m.EditOpts.ActiveTool = "trim"
-													m.SubOptionsItems = []string{"Parameters Setup"}
-													m.ParamInput1.Placeholder = "Start (e.g., 00:00:05 or 5)"
-													m.ParamInput2.Placeholder = "End (e.g., 00:00:30 or 30)"
-													if m.MediaInfo != nil {
-														m.ParamInput1.SetValue("0")
-														m.ParamInput2.SetValue(strconv.FormatFloat(m.MediaInfo.Duration.Seconds(), 'f', 2, 64))
-													}
-													m.ActivePanel = PanelSubOptions
-													cmds = append(cmds, m.ParamInput1.Focus())
-												case 2: // Split Video
-													m.EditOpts.ActiveTool = "split"
-													m.SubOptionsItems = []string{"Parameters Setup"}
-													m.ParamInput1.Placeholder = "Split point (e.g., 00:01:00 or 60)"
-													m.ParamInput1.SetValue("0")
-													m.ActivePanel = PanelSubOptions
-													cmds = append(cmds, m.ParamInput1.Focus())
-												case 3: // Audio Normalization
-													m.EditOpts.ActiveTool = "audio"
-													m.EditOpts.NormalizeAudio = true
-													m.SubOptionsItems = []string{"Loudnorm Equalizer Active"}
-												case 4: // Frame Export
-													m.EditOpts.ActiveTool = "frame"
-													m.SubOptionsItems = []string{"Parameters Setup"}
-													m.ParamInput1.Placeholder = "Timestamp (e.g., 00:00:05 or 5)"
-													m.ParamInput1.SetValue("0")
-													m.ActivePanel = PanelSubOptions
-													cmds = append(cmds, m.ParamInput1.Focus())
-												case 5: // Burn Subtitles
-													m.EditOpts.ActiveTool = "subtitles"
-													m.SubOptionsItems = []string{"Hardburn Properties"}
-													m.ParamInput1.Placeholder = "File Path (e.g., sub.srt)"
-													m.ParamInput2.Placeholder = "Position (bottom/top/center)"
-													m.ParamInput2.SetValue("bottom")
-													m.ParamInput3.Placeholder = "Offset (e.g., 10)"
-													m.ParamInput3.SetValue("10")
-													m.ParamInput4.Placeholder = "Bg Color (black/none)"
-													m.ParamInput4.SetValue("black")
-													m.ParamInput5.Placeholder = "Text Color (white/yellow)"
-													m.ParamInput5.SetValue("white")
-													m.ActivePanel = PanelSubOptions
-													cmds = append(cmds, m.ParamInput1.Focus())
-												case 6: // Convert Format
-													m.EditOpts.ActiveTool = "convert"
-													m.SubOptionsItems = []string{"MP4", "MKV", "MOV", "AVI", "MP3 Pure Audio", "Animated GIF"}
-													m.ActivePanel = PanelSubOptions
-												case 7: // CRF Compression
-													m.EditOpts.ActiveTool = "compress"
-													m.SubOptionsItems = []string{"CRF 23 (High Quality / Balanced)", "CRF 28 (High Compression / Social Sharing)"}
-													m.ActivePanel = PanelSubOptions
-												case 8: // Separate Video/Audio
-													m.EditOpts.ActiveTool = "sepaudio"
-													m.SubOptionsItems = []string{"Extract Video (no audio) & Audio (.mp3 HQ)"}
-												case 9: // Strip Metadata
-													m.EditOpts.ActiveTool = "metadata"
-													m.SubOptionsItems = []string{"Remove EXIF/Stream Metadata Tags"}
-												case 10: // Replace Audio Track
-													m.EditOpts.ActiveTool = "replaceaudio"
-													m.SubOptionsItems = []string{"Audio Track Override"}
-													m.ParamInput1.Placeholder = "New Audio File Path (.mp3, .wav, .m4a)"
-													m.ActivePanel = PanelSubOptions
-													cmds = append(cmds, m.ParamInput1.Focus())
+											currentKind := m.SidebarItems[m.SidebarIdx].Kind
+											if currentKind != ModeAudioNorm && currentKind != ModeSepAudio && currentKind != ModeMetadata {
+												m.ActivePanel = PanelSubOptions
 											}
+
+											if currentKind == ModeTrim || currentKind == ModeSplit || currentKind == ModeFrame || currentKind == ModeSubtitles || currentKind == ModeReplaceAudio {
+												cmds = append(cmds, m.ParamInput1.Focus())
+											}
+
 											m.syncInputsToEditOpts()
 											m.UpdateLiveCommand()
 
@@ -338,8 +285,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 												mainVid = m.EditOpts.InputFiles[0]
 											}
 
-											switch m.SidebarIdx {
-												case 0: // Crop Video
+											currentKind := m.SidebarItems[m.SidebarIdx].Kind
+											switch currentKind {
+												case ModeCrop:
 													if m.SubOptionsIdx == 3 {
 														m.EditOpts.ActiveTool = "autocrop"
 													} else {
@@ -347,7 +295,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 														presets := []string{"9:16", "1:1", "16:9"}
 														m.EditOpts.CropPreset = presets[m.SubOptionsIdx]
 													}
-												case 1: // Trim Segment
+												case ModeTrim:
 													t1, err1 := ffmpeg.ParseDurationString(m.ParamInput1.Value())
 													t2, err2 := ffmpeg.ParseDurationString(m.ParamInput2.Value())
 													if err1 != nil || err2 != nil {
@@ -362,7 +310,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 													}
 													m.EditOpts.TrimStart = m.ParamInput1.Value()
 													m.EditOpts.TrimEnd = m.ParamInput2.Value()
-												case 2: // Split Video
+												case ModeSplit:
 													sp, err := ffmpeg.ParseDurationString(m.ParamInput1.Value())
 													if err != nil {
 														m.ValidationError = "INVALID TIMESTAMP: Use HH:MM:SS or seconds."
@@ -375,7 +323,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 														return m, tea.Batch(cmds...)
 													}
 													m.EditOpts.SplitPoint = m.ParamInput1.Value()
-												case 5: // Burn Subtitles
+												case ModeSubtitles:
 													subPath := strings.TrimSpace(m.ParamInput1.Value())
 													if subPath == "" {
 														m.ValidationError = "ERROR: Missing subtitle file path."
@@ -390,28 +338,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 													}
 													m.ParamInput1.SetValue(resolved)
 													m.EditOpts.SubPath = resolved
-												case 6: // Convert Format
-													if m.SubOptionsIdx == 5 {
-														m.EditOpts.ActiveTool = "gif"
-														m.SubOptionsItems = []string{"Convert to Animated GIF"}
-														m.ParamInput1.Placeholder = "Start Time (e.g., 00:00:00)"
-														m.ParamInput2.Placeholder = "End Time (e.g., 00:00:05)"
-														cmds = append(cmds, m.ParamInput1.Focus())
-														m.syncInputsToEditOpts()
-														m.UpdateLiveCommand()
-														return m, tea.Batch(cmds...)
-													} else {
+												case ModeConvert:
+													if m.MediaInfo != nil && m.MediaInfo.Video == nil {
 														m.EditOpts.ActiveTool = "convert"
-														formats := []string{"mp4", "mkv", "mov", "avi", "mp3"}
+														formats := []string{"mp3", "wav", "aac", "flac", "ogg"}
 														m.EditOpts.TargetFormat = formats[m.SubOptionsIdx]
+													} else {
+														if m.SubOptionsIdx == 5 {
+															m.EditOpts.ActiveTool = "gif"
+															m.SubOptionsItems = []string{"Convert to Animated GIF"}
+															m.ParamInput1.Placeholder = "Start Time (e.g., 00:00:00)"
+															m.ParamInput2.Placeholder = "End Time (e.g., 00:00:05)"
+															cmds = append(cmds, m.ParamInput1.Focus())
+															m.syncInputsToEditOpts()
+															m.UpdateLiveCommand()
+															return m, tea.Batch(cmds...)
+														} else {
+															m.EditOpts.ActiveTool = "convert"
+															formats := []string{"mp4", "mkv", "mov", "avi", "mp3"}
+															m.EditOpts.TargetFormat = formats[m.SubOptionsIdx]
+														}
 													}
-												case 7: // Compress
+												case ModeCompress:
 													if m.SubOptionsIdx == 0 {
 														m.EditOpts.CRFValue = "23"
 													} else {
 														m.EditOpts.CRFValue = "28"
 													}
-												case 10: // Replace Audio
+												case ModeReplaceAudio:
 													audioPath := strings.TrimSpace(m.ParamInput1.Value())
 													if audioPath == "" {
 														m.ValidationError = "ERROR: Missing target audio file path."
@@ -462,6 +416,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 												case MsgMediaProbed:
 													m.MediaInfo = msg.Info
+													m.FilterSidebarForMedia()
 													m.UpdateLiveCommand()
 
 												case MsgError:
@@ -495,7 +450,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 														} else if m.EditOpts.ActiveTool == "convert" {
 															outTarget = ffmpeg.GetDerivedName(m.EditOpts.InputFiles[0], "", m.EditOpts.TargetFormat)
 														} else if m.EditOpts.ActiveTool == "split" {
-															outTarget = ffmpeg.GetDerivedName(m.EditOpts.InputFiles[0], "_part1", "") + " & " + ffmpeg.GetDerivedName(m.EditOpts.InputFiles[0], "_part2", "")
+															inFile := m.EditOpts.InputFiles[0]
+															p1Name := ffmpeg.GetDerivedName(inFile, "_part1", "")
+															p2Name := ffmpeg.GetDerivedName(inFile, "_part2", "")
+															outTarget = p1Name + " & " + p2Name
 														}
 
 														m.History = append(m.History, HistoryItem{

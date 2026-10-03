@@ -192,19 +192,50 @@ func BuildCommand(opts EditOptions) []string {
 					args = append(args, "-y", outName)
 
 				case "split":
-					outName1 := GetDerivedName(inFile, "_part1", "")
-					outName2 := GetDerivedName(inFile, "_part2", "")
-
 					splitPoint := opts.SplitPoint
 					if splitPoint == "" {
 						splitPoint = "0"
 					}
 
-					cmd1 := fmt.Sprintf("-ss 0 -i %q -to %s -c copy -avoid_negative_ts make_zero -y %q", inFile, splitPoint, outName1)
-					cmd2 := fmt.Sprintf("-ss %s -i %q -c copy -avoid_negative_ts make_zero -y %q", splitPoint, inFile, outName2)
+					part1Name := GetDerivedName(inFile, "_part1", "")
+					part2Name := GetDerivedName(inFile, "_part2", "")
 
-					fullCmd := fmt.Sprintf("%s && ffmpeg %s", cmd1, cmd2)
-					return []string{"__SHELL_CMD__", fullCmd}
+					ext := strings.ToLower(filepath.Ext(inFile))
+					isAudioOnly := ext == ".mp3" || ext == ".wav" || ext == ".aac" || ext == ".flac" || ext == ".ogg" || ext == ".m4a"
+
+					if isAudioOnly {
+						var codecArgs []string
+						if ext == ".mp3" {
+							codecArgs = []string{"-acodec", "libmp3lame", "-q:a", "0"}
+						} else {
+							codecArgs = []string{"-c:a", "copy"}
+						}
+
+						// Stream 1: Segment 0 to splitPoint
+						args = append(args, "-y", "-i", inFile, "-to", splitPoint)
+						args = append(args, codecArgs...)
+						args = append(args, part1Name)
+
+						// Stream 2: Segment splitPoint to end
+						args = append(args, "-i", inFile, "-ss", splitPoint)
+						args = append(args, codecArgs...)
+						args = append(args, part2Name)
+					} else {
+						// Video stream split with re-encoding for clean keyframe boundary cutting
+						args = append(args,
+							      "-y",
+		    "-i", inFile,
+		    "-to", splitPoint,
+		    "-c:v", "libx264",
+		    "-c:a", "aac",
+		    part1Name,
+		    "-i", inFile,
+		    "-ss", splitPoint,
+		    "-c:v", "libx264",
+		    "-c:a", "aac",
+		    part2Name,
+						)
+					}
 
 				case "audio":
 					args = append(args, "-i", inFile)
@@ -258,6 +289,8 @@ func BuildCommand(opts EditOptions) []string {
 					args = append(args, "-i", inFile)
 					if opts.TargetFormat == "mp3" {
 						args = append(args, "-vn", "-acodec", "libmp3lame", "-q:a", "0")
+					} else if opts.TargetFormat == "wav" || opts.TargetFormat == "aac" || opts.TargetFormat == "flac" || opts.TargetFormat == "ogg" {
+						args = append(args, "-vn")
 					} else {
 						args = append(args, "-c:v", "copy", "-c:a", "copy")
 					}
